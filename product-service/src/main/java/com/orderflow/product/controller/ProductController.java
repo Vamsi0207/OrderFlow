@@ -1,6 +1,7 @@
 package com.orderflow.product.controller;
 
 import com.orderflow.product.dto.request.ProductRequest;
+import com.orderflow.product.dto.response.ProductInfoResponse;
 import com.orderflow.product.dto.response.ProductResponse;
 import com.orderflow.product.service.ProductService;
 import jakarta.validation.Valid;
@@ -65,4 +66,13 @@ public class ProductController {
 
         return ResponseEntity.noContent().build();
     }
+
+    @GetMapping("/{id}/info")
+    public ResponseEntity<ProductInfoResponse> getProductInfo(
+        @PathVariable UUID id) {
+
+    return ResponseEntity.ok(
+            productService.getProductInfo(id)
+    );
+}
 }

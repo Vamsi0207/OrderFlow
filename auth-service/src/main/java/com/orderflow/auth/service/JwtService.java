@@ -1,7 +1,6 @@
 package com.orderflow.auth.service;
 
 import com.orderflow.auth.config.JwtProperties;
-
 import io.jsonwebtoken.Claims;
 import io.jsonwebtoken.Jwts;
 import io.jsonwebtoken.security.Keys;
@@ -36,26 +35,28 @@ public class JwtService {
     }
 
     public String extractUsername(String token) {
-    return extractAllClaims(token).getSubject();
+        return extractAllClaims(token).getSubject();
     }
 
     private Claims extractAllClaims(String token) {
 
-    return Jwts.parser()
-            .verifyWith(getSigningKey())
-            .build()
-            .parseSignedClaims(token)
-            .getPayload();
+        return Jwts.parser()
+                .verifyWith(getSigningKey())
+                .build()
+                .parseSignedClaims(token)
+                .getPayload();
     }
 
     private boolean isTokenExpired(String token) {
-    return extractAllClaims(token)
-            .getExpiration()
-            .before(new Date());
-}
+
+        return extractAllClaims(token)
+                .getExpiration()
+                .before(new Date());
+    }
 
     public boolean isTokenValid(String token, UserDetails userDetails) {
-    return extractUsername(token).equals(userDetails.getUsername())
-            && !isTokenExpired(token);
-}
+
+        return extractUsername(token).equals(userDetails.getUsername())
+                && !isTokenExpired(token);
+    }
 }

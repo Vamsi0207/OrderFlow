@@ -1,0 +1,23 @@
+{
+	"folders": [
+		{
+			"path": "product-service"
+		},
+		{
+			"path": "discovery-server"
+		},
+		{
+			"path": "gateway"
+		},
+		{
+			"path": "auth-service"
+		},
+		{
+			"path": "order-service"
+		}
+	],
+	"settings": {
+		"java.compile.nullAnalysis.mode": "disabled",
+		"java.configuration.updateBuildConfiguration": "interactive"
+	}
+}

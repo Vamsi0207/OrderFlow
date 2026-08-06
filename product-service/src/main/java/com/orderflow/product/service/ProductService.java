@@ -1,6 +1,7 @@
 package com.orderflow.product.service;
 
 import com.orderflow.product.dto.request.ProductRequest;
+import com.orderflow.product.dto.response.ProductInfoResponse;
 import com.orderflow.product.dto.response.ProductResponse;
 import com.orderflow.product.entity.Product;
 import com.orderflow.product.exception.ProductNotFoundException;
@@ -91,4 +92,18 @@ public class ProductService {
                 .createdAt(product.getCreatedAt())
                 .build();
     }
+
+    public ProductInfoResponse getProductInfo(UUID id) {
+
+    Product product = productRepository.findById(id)
+            .orElseThrow(() ->
+                    new ProductNotFoundException(id.toString()));
+
+    return ProductInfoResponse.builder()
+            .id(product.getId())
+            .name(product.getName())
+            .price(product.getPrice())
+            .stock(product.getStock())
+            .build();
+}
 }
