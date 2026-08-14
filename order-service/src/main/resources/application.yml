@@ -8,7 +8,7 @@ spring:
   datasource:
     url: jdbc:postgresql://localhost:5432/order_db
     username: postgres
-    password: V@msi020705
+    password: ${DB_PASSWORD}
 
   jpa:
     hibernate:
@@ -18,6 +18,9 @@ spring:
     properties:
       hibernate:
         format_sql: true
+
+  kafka:
+    bootstrap-servers: localhost:9092
 
 eureka:
   client:

@@ -1,12 +1,15 @@
 server:
-  port: 8081
+  port: 8085
 
 spring:
   application:
-    name: auth-service
+    name: payment-service
+
+  kafka:
+    bootstrap-servers: localhost:9092
 
   datasource:
-    url: jdbc:postgresql://localhost:5432/auth_db
+    url: jdbc:postgresql://localhost:5432/payment_db
     username: postgres
     password: ${DB_PASSWORD}
 
@@ -18,10 +21,6 @@ spring:
     properties:
       hibernate:
         format_sql: true
-
-jwt:
-  secret: 8A1mP9kX3sV7nQ2zR6tY4wB8cD5fH1jL9mN3pQ7rT2uX6vZ5aC8eF1gH4kJ7
-  expiration: 86400000
 
 eureka:
   client:

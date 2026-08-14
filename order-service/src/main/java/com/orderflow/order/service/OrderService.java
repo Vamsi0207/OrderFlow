@@ -1,6 +1,11 @@
 package com.orderflow.order.service;
 
+import com.orderflow.order.client.InventoryClient;
 import com.orderflow.order.client.ProductClient;
+import com.orderflow.order.dto.inventory.request.InventoryAvailabilityRequest;
+import com.orderflow.order.dto.inventory.request.InventoryReservationRequest;
+import com.orderflow.order.dto.inventory.response.InventoryAvailabilityResponse;
+import com.orderflow.order.dto.inventory.response.InventoryReservationResponse;
 import com.orderflow.order.dto.request.CreateOrderRequest;
 import com.orderflow.order.dto.request.OrderItemRequest;
 import com.orderflow.order.dto.response.OrderItemResponse;
@@ -8,7 +13,10 @@ import com.orderflow.order.dto.response.OrderResponse;
 import com.orderflow.order.entity.Order;
 import com.orderflow.order.entity.OrderItem;
 import com.orderflow.order.enums.OrderStatus;
+import com.orderflow.order.event.OrderCreatedEvent;
+import com.orderflow.order.exception.InsufficientStockException;
 import com.orderflow.order.exception.OrderNotFoundException;
+import com.orderflow.order.producer.OrderEventProducer;
 import com.orderflow.order.repository.OrderItemRepository;
 import com.orderflow.order.repository.OrderRepository;
 import lombok.RequiredArgsConstructor;
@@ -28,7 +36,10 @@ public class OrderService {
     private final OrderRepository orderRepository;
     private final OrderItemRepository orderItemRepository;
     private final ProductClient productClient;
+    private final InventoryClient inventoryClient;
+    private final OrderEventProducer orderEventProducer;
 
+    @Transactional
     public OrderResponse createOrder(CreateOrderRequest request) {
 
     Order order = Order.builder()
@@ -45,6 +56,35 @@ public class OrderService {
 
         ProductInfoResponse product =
         productClient.getProduct(itemRequest.getProductId());
+
+        InventoryAvailabilityRequest availabilityRequest =
+        InventoryAvailabilityRequest.builder()
+                .productId(itemRequest.getProductId())
+                .quantity(itemRequest.getQuantity())
+                .build();
+
+        InventoryAvailabilityResponse availabilityResponse =
+        inventoryClient.checkAvailability(availabilityRequest);
+
+        if (!availabilityResponse.isAvailable()) {
+         throw new InsufficientStockException(
+            "Insufficient stock for product: " + product.getId());
+        }
+
+        InventoryReservationRequest reservationRequest =
+        InventoryReservationRequest.builder()
+                .productId(itemRequest.getProductId())
+                .quantity(itemRequest.getQuantity())
+                .build();
+
+      InventoryReservationResponse reservationResponse =
+        inventoryClient.reserveStock(reservationRequest);
+
+        if (!reservationResponse.isSuccess()) {
+          throw new InsufficientStockException(
+            "Failed to reserve stock for product: "
+                    + itemRequest.getProductId());
+        }
 
         BigDecimal price = product.getPrice();
 
@@ -67,10 +107,21 @@ public class OrderService {
     order.setOrderItems(orderItems);
     order.setTotalAmount(totalAmount);
 
-    Order savedOrder = orderRepository.save(order);
+         Order savedOrder = orderRepository.save(order);
 
-    return mapToResponse(savedOrder);
+        OrderCreatedEvent event = OrderCreatedEvent.builder()
+        .orderId(savedOrder.getId())
+        .userId(savedOrder.getUserId())
+        .amount(savedOrder.getTotalAmount())
+        .build();
+
+        orderEventProducer.publishOrderCreated(event);
+
+        return mapToResponse(savedOrder);
+
+
  }
+
  @Transactional(readOnly = true)
  public List<OrderResponse> getAllOrders() {
 

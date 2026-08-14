@@ -7,6 +7,11 @@ import org.springframework.web.bind.MethodArgumentNotValidException;
 import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.RestControllerAdvice;
 
+import com.orderflow.order.dto.response.ErrorResponse;
+
+import jakarta.servlet.http.HttpServletRequest;
+
+import java.time.Instant;
 import java.util.HashMap;
 import java.util.Map;
 
@@ -33,5 +38,21 @@ public class GlobalExceptionHandler {
         }
 
         return ResponseEntity.badRequest().body(errors);
+    }
+
+    @ExceptionHandler(InsufficientStockException.class)
+    public ResponseEntity<ErrorResponse> handleInsufficientStock(
+        InsufficientStockException ex,
+        HttpServletRequest request) {
+
+        ErrorResponse response = ErrorResponse.builder()
+            .timestamp(Instant.now())
+            .status(HttpStatus.BAD_REQUEST.value())
+            .error(HttpStatus.BAD_REQUEST.name())
+            .message(ex.getMessage())
+            .path(request.getRequestURI())
+            .build();
+
+         return ResponseEntity.badRequest().body(response);
     }
 }
