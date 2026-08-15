@@ -6,7 +6,7 @@ spring:
     name: auth-service
 
   datasource:
-    url: jdbc:postgresql://localhost:5432/auth_db
+    url: jdbc:postgresql://${DB_HOST:localhost}:5432/auth_db
     username: postgres
     password: ${DB_PASSWORD}
 
@@ -20,13 +20,13 @@ spring:
         format_sql: true
 
 jwt:
-  secret: 8A1mP9kX3sV7nQ2zR6tY4wB8cD5fH1jL9mN3pQ7rT2uX6vZ5aC8eF1gH4kJ7
+  secret: ${JWT_SECRET}
   expiration: 86400000
 
 eureka:
   client:
     service-url:
-      defaultZone: http://localhost:8761/eureka
+      defaultZone: http://${EUREKA_HOST:localhost}:8761/eureka
 
   instance:
     instance-id: ${spring.application.name}:${server.port}

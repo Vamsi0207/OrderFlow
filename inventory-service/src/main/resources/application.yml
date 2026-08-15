@@ -6,7 +6,7 @@ spring:
     name: inventory-service
 
   datasource:
-    url: jdbc:postgresql://localhost:5432/inventory_db
+    url: jdbc:postgresql://${DB_HOST:localhost}:5432/inventory_db
     username: postgres
     password: ${DB_PASSWORD}
 
@@ -22,7 +22,7 @@ spring:
 eureka:
   client:
     service-url:
-      defaultZone: http://localhost:8761/eureka
+      defaultZone: http://${EUREKA_HOST:localhost}:8761/eureka
 
   instance:
     instance-id: ${spring.application.name}:${server.port}
