@@ -1,8 +1,9 @@
 package com.orderflow.payment.consumer;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
-import com.orderflow.payment.event.OrderCreatedEvent;
 import com.orderflow.payment.dto.request.CreatePaymentRequest;
+import com.orderflow.payment.dto.response.PaymentResponse;
+import com.orderflow.payment.event.OrderCreatedEvent;
 import com.orderflow.payment.service.PaymentService;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -33,17 +34,21 @@ public class OrderEventConsumer {
                             .amount(event.getAmount())
                             .build();
 
-            paymentService.createPayment(
-                    request,
-                    event.getUserId()
-            );
+            PaymentResponse payment =
+                    paymentService.createPayment(
+                            request,
+                            event.getUserId()
+                    );
 
             log.info(
-                    "Payment created for order: {}",
-                    event.getOrderId()
+                    "Order event processed successfully. Order: {}, Payment: {}, Status: {}",
+                    event.getOrderId(),
+                    payment.getId(),
+                    payment.getStatus()
             );
 
         } catch (Exception e) {
+
             log.error(
                     "Failed to process OrderCreatedEvent: {}",
                     message,

@@ -8,7 +8,15 @@ import java.math.BigDecimal;
 import java.util.UUID;
 
 @Entity
-@Table(name = "payments")
+@Table(
+        name = "payments",
+        uniqueConstraints = {
+                @UniqueConstraint(
+                        name = "uk_payment_order_id",
+                        columnNames = "orderId"
+                )
+        }
+)
 @Getter
 @Setter
 @NoArgsConstructor
