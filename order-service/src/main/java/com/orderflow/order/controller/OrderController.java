@@ -2,6 +2,7 @@ package com.orderflow.order.controller;
 
 import com.orderflow.order.dto.request.CreateOrderRequest;
 import com.orderflow.order.dto.response.OrderResponse;
+import com.orderflow.order.security.OrderAuthorization;
 import com.orderflow.order.service.OrderService;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
@@ -18,12 +19,15 @@ import java.util.UUID;
 public class OrderController {
 
     private final OrderService orderService;
+    private final OrderAuthorization orderAuthorization;
 
     @PostMapping
     public ResponseEntity<OrderResponse> createOrder(
-            @Valid @RequestBody CreateOrderRequest request) {
+            @Valid @RequestBody CreateOrderRequest request,
+            @RequestHeader("X-User-Id") UUID userId) {
 
-        OrderResponse response = orderService.createOrder(request);
+        OrderResponse response =
+                orderService.createOrder(request, userId);
 
         return ResponseEntity
                 .status(HttpStatus.CREATED)
@@ -31,25 +35,42 @@ public class OrderController {
     }
 
     @GetMapping
-    public ResponseEntity<List<OrderResponse>> getAllOrders() {
+    public ResponseEntity<List<OrderResponse>> getAllOrders(
+            @RequestHeader("X-User-Role") String role) {
+
+        orderAuthorization.requireAdmin(role);
 
         return ResponseEntity.ok(
                 orderService.getAllOrders()
         );
     }
 
-    @GetMapping("/{id}")
-    public ResponseEntity<OrderResponse> getOrderById(
-            @PathVariable UUID id) {
+    @GetMapping("/my-orders")
+    public ResponseEntity<List<OrderResponse>> getMyOrders(
+            @RequestHeader("X-User-Id") UUID userId) {
 
         return ResponseEntity.ok(
-                orderService.getOrderById(id)
+                orderService.getOrdersByUser(userId)
+        );
+    }
+
+    @GetMapping("/{id}")
+    public ResponseEntity<OrderResponse> getOrderById(
+            @PathVariable UUID id,
+            @RequestHeader("X-User-Id") UUID userId,
+            @RequestHeader("X-User-Role") String role) {
+
+        return ResponseEntity.ok(
+                orderService.getOrderById(id, userId, role)
         );
     }
 
     @GetMapping("/user/{userId}")
     public ResponseEntity<List<OrderResponse>> getOrdersByUser(
-            @PathVariable UUID userId) {
+            @PathVariable UUID userId,
+            @RequestHeader("X-User-Role") String role) {
+
+        orderAuthorization.requireAdmin(role);
 
         return ResponseEntity.ok(
                 orderService.getOrdersByUser(userId)

@@ -1,0 +1,152 @@
+services:
+
+  postgres:
+    image: postgres:17
+    container_name: orderflow-postgres
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: ${DB_PASSWORD}
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./docker/postgres/init:/docker-entrypoint-initdb.d
+    networks:
+      - orderflow-network
+
+  kafka:
+    image: apache/kafka:4.1.0
+    container_name: orderflow-kafka
+    ports:
+      - "9092:9092"
+    environment:
+      KAFKA_NODE_ID: 1
+      KAFKA_PROCESS_ROLES: broker,controller
+      KAFKA_CONTROLLER_QUORUM_VOTERS: 1@kafka:29093
+      KAFKA_LISTENERS: PLAINTEXT://:9092,CONTROLLER://:29093
+      KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://kafka:9092
+      KAFKA_CONTROLLER_LISTENER_NAMES: CONTROLLER
+      KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: CONTROLLER:PLAINTEXT,PLAINTEXT:PLAINTEXT
+      KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1
+      KAFKA_TRANSACTION_STATE_LOG_REPLICATION_FACTOR: 1
+      KAFKA_TRANSACTION_STATE_LOG_MIN_ISR: 1
+      KAFKA_GROUP_INITIAL_REBALANCE_DELAY_MS: 0
+    volumes:
+      - kafka_data:/var/lib/kafka/data
+    networks:
+      - orderflow-network
+
+  discovery-server:
+    build:
+      context: ./discovery-server
+    container_name: orderflow-discovery-server
+    ports:
+      - "8761:8761"
+    networks:
+      - orderflow-network
+
+  auth-service:
+    build:
+      context: ./auth-service
+    container_name: orderflow-auth-service
+    environment:
+      DB_HOST: postgres
+      EUREKA_HOST: discovery-server
+      DB_PASSWORD: ${DB_PASSWORD}
+      JWT_SECRET: ${JWT_SECRET}
+    ports:
+      - "8081:8081"
+    depends_on:
+      - postgres
+      - discovery-server
+    networks:
+      - orderflow-network
+  gateway:
+    build:
+      context: ./gateway
+    container_name: orderflow-gateway
+    environment:
+      EUREKA_HOST: discovery-server
+      JWT_SECRET: ${JWT_SECRET}
+    ports:
+      - "8080:8080"
+    depends_on:
+      - discovery-server
+    networks:
+      - orderflow-network
+
+  order-service:
+    build:
+      context: ./order-service
+    container_name: orderflow-order-service
+    environment:
+      DB_HOST: postgres
+      KAFKA_HOST: kafka
+      EUREKA_HOST: discovery-server
+      DB_PASSWORD: ${DB_PASSWORD}
+    ports:
+      - "8083:8083"
+    depends_on:
+      - postgres
+      - kafka
+      - discovery-server
+    networks:
+      - orderflow-network
+
+  product-service:
+    build:
+      context: ./product-service
+    container_name: orderflow-product-service
+    environment:
+      DB_HOST: postgres
+      EUREKA_HOST: discovery-server
+      DB_PASSWORD: ${DB_PASSWORD}
+    ports:
+      - "8082:8082"
+    depends_on:
+      - postgres
+      - discovery-server
+    networks:
+      - orderflow-network
+
+  inventory-service:
+    build:
+      context: ./inventory-service
+    container_name: orderflow-inventory-service
+    environment:
+      DB_HOST: postgres
+      EUREKA_HOST: discovery-server
+      DB_PASSWORD: ${DB_PASSWORD}
+    ports:
+      - "8084:8084"
+    depends_on:
+      - postgres
+      - discovery-server
+    networks:
+      - orderflow-network
+
+  payment-service:
+    build:
+      context: ./payment-service
+    container_name: orderflow-payment-service
+    environment:
+      DB_HOST: postgres
+      KAFKA_HOST: kafka
+      EUREKA_HOST: discovery-server
+      DB_PASSWORD: ${DB_PASSWORD}
+    ports:
+      - "8085:8085"
+    depends_on:
+      - postgres
+      - kafka
+      - discovery-server
+    networks:
+      - orderflow-network
+
+volumes:
+  postgres_data:
+  kafka_data:
+
+networks:
+  orderflow-network:
+    driver: bridge

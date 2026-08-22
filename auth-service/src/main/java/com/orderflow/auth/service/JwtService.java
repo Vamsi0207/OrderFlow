@@ -1,11 +1,11 @@
 package com.orderflow.auth.service;
 
 import com.orderflow.auth.config.JwtProperties;
+import com.orderflow.auth.entity.User;
 import io.jsonwebtoken.Claims;
 import io.jsonwebtoken.Jwts;
 import io.jsonwebtoken.security.Keys;
 import lombok.RequiredArgsConstructor;
-import org.springframework.security.core.userdetails.UserDetails;
 import org.springframework.stereotype.Service;
 
 import javax.crypto.SecretKey;
@@ -18,12 +18,16 @@ public class JwtService {
 
     private final JwtProperties jwtProperties;
 
-    public String generateToken(UserDetails userDetails) {
+    public String generateToken(User user) {
 
         return Jwts.builder()
-                .subject(userDetails.getUsername())
+                .subject(user.getEmail())
+                .claim("userId", user.getId().toString())
+                .claim("role", user.getRole().name())
                 .issuedAt(new Date())
-                .expiration(new Date(System.currentTimeMillis() + jwtProperties.getExpiration()))
+                .expiration(new Date(
+                        System.currentTimeMillis() + jwtProperties.getExpiration()
+                ))
                 .signWith(getSigningKey())
                 .compact();
     }
@@ -54,7 +58,7 @@ public class JwtService {
                 .before(new Date());
     }
 
-    public boolean isTokenValid(String token, UserDetails userDetails) {
+    public boolean isTokenValid(String token, org.springframework.security.core.userdetails.UserDetails userDetails) {
 
         return extractUsername(token).equals(userDetails.getUsername())
                 && !isTokenExpired(token);

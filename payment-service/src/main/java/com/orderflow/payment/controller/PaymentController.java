@@ -21,13 +21,15 @@ public class PaymentController {
     @PostMapping
     @ResponseStatus(HttpStatus.CREATED)
     public PaymentResponse createPayment(
-            @Valid @RequestBody CreatePaymentRequest request) {
+            @Valid @RequestBody CreatePaymentRequest request,
+            @RequestHeader("X-User-Id") UUID userId) {
 
-        return paymentService.createPayment(request);
+        return paymentService.createPayment(request, userId);
     }
 
     @GetMapping("/{id}")
-    public PaymentResponse getPaymentById(@PathVariable UUID id) {
+    public PaymentResponse getPaymentById(
+            @PathVariable UUID id) {
 
         return paymentService.getPaymentById(id);
     }

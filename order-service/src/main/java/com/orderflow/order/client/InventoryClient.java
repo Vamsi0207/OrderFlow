@@ -37,4 +37,28 @@ public class InventoryClient {
                 .bodyToMono(InventoryReservationResponse.class)
                 .block();
     }
+     
+     public InventoryReservationResponse releaseStock(
+        InventoryReservationRequest request) {
+
+    return webClientBuilder.build()
+            .post()
+            .uri("http://INVENTORY-SERVICE/api/v1/inventory/release")
+            .bodyValue(request)
+            .retrieve()
+            .bodyToMono(InventoryReservationResponse.class)
+            .block();
+}
+
+public InventoryReservationResponse deductStock(
+        InventoryReservationRequest request) {
+
+    return webClientBuilder.build()
+            .post()
+            .uri("http://INVENTORY-SERVICE/api/v1/inventory/deduct")
+            .bodyValue(request)
+            .retrieve()
+            .bodyToMono(InventoryReservationResponse.class)
+            .block();
+}
 }
