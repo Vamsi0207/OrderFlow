@@ -2,6 +2,7 @@ package com.orderflow.product.dto.response;
 
 import lombok.*;
 
+import java.io.Serializable;
 import java.math.BigDecimal;
 import java.util.UUID;
 
@@ -10,7 +11,9 @@ import java.util.UUID;
 @NoArgsConstructor
 @AllArgsConstructor
 @Builder
-public class ProductInfoResponse {
+public class ProductInfoResponse implements Serializable {
+
+    private static final long serialVersionUID = 1L;
 
     private UUID id;
     private String name;

@@ -36,6 +36,14 @@ services:
     networks:
       - orderflow-network
 
+  redis:
+    image: redis:7-alpine
+    container_name: orderflow-redis
+    volumes:
+      - redis_data:/data
+    networks:
+      - orderflow-network
+
   discovery-server:
     build:
       context: ./discovery-server
@@ -101,11 +109,13 @@ services:
       DB_HOST: postgres
       EUREKA_HOST: discovery-server
       DB_PASSWORD: ${DB_PASSWORD}
+      REDIS_HOST: redis
     ports:
       - "8082:8082"
     depends_on:
       - postgres
       - discovery-server
+      - redis
     networks:
       - orderflow-network
 
@@ -146,6 +156,7 @@ services:
 volumes:
   postgres_data:
   kafka_data:
+  redis_data:
 
 networks:
   orderflow-network:
