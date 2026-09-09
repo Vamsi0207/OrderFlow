@@ -144,6 +144,8 @@ services:
       KAFKA_HOST: kafka
       EUREKA_HOST: discovery-server
       DB_PASSWORD: ${DB_PASSWORD}
+      STRIPE_SECRET_KEY: ${STRIPE_SECRET_KEY}
+      STRIPE_WEBHOOK_SECRET: ${STRIPE_WEBHOOK_SECRET}
     ports:
       - "8085:8085"
     depends_on:

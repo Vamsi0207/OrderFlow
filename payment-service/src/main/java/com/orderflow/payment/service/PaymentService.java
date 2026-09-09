@@ -5,16 +5,14 @@ import com.orderflow.payment.dto.response.PaymentResponse;
 import com.orderflow.payment.entity.Payment;
 import com.orderflow.payment.enums.PaymentStatus;
 import com.orderflow.payment.exception.PaymentNotFoundException;
-import com.orderflow.payment.event.PaymentCompletedEvent;
-import com.orderflow.payment.event.PaymentFailedEvent;
-import com.orderflow.payment.producer.PaymentEventProducer;
 import com.orderflow.payment.repository.PaymentRepository;
+import com.stripe.exception.StripeException;
+import com.stripe.model.PaymentIntent;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
-import java.math.BigDecimal;
 import java.util.List;
 import java.util.UUID;
 
@@ -24,7 +22,7 @@ import java.util.UUID;
 public class PaymentService {
 
     private final PaymentRepository paymentRepository;
-    private final PaymentEventProducer paymentEventProducer;
+    private final StripePaymentService stripePaymentService;
 
     @Transactional
     public PaymentResponse createPayment(
@@ -55,61 +53,49 @@ public class PaymentService {
             CreatePaymentRequest request,
             UUID authenticatedUserId) {
 
-        Payment payment = Payment.builder()
-                .orderId(request.getOrderId())
-                .userId(authenticatedUserId)
-                .amount(request.getAmount())
-                .status(PaymentStatus.PENDING)
-                .build();
+        try {
 
-        Payment savedPayment = paymentRepository.save(payment);
+            PaymentIntent paymentIntent =
+                    stripePaymentService.createPaymentIntent(
+                            request.getAmount(),
+                            request.getOrderId()
+                    );
 
-        log.info(
-                "New payment created: {} for order: {}",
-                savedPayment.getId(),
-                savedPayment.getOrderId()
-        );
-
-        if (request.getAmount().compareTo(new BigDecimal("100000")) < 0) {
-
-            savedPayment.setStatus(PaymentStatus.COMPLETED);
-            paymentRepository.save(savedPayment);
-
-            PaymentCompletedEvent event = PaymentCompletedEvent.builder()
-                    .paymentId(savedPayment.getId())
-                    .orderId(savedPayment.getOrderId())
-                    .userId(savedPayment.getUserId())
-                    .amount(savedPayment.getAmount())
+            Payment payment = Payment.builder()
+                    .orderId(request.getOrderId())
+                    .userId(authenticatedUserId)
+                    .amount(request.getAmount())
+                    .status(PaymentStatus.PENDING)
+                    .stripePaymentIntentId(paymentIntent.getId())
                     .build();
 
-            paymentEventProducer.publishPaymentCompleted(event);
+            Payment savedPayment = paymentRepository.save(payment);
 
             log.info(
-                    "Payment completed for order: {}",
-                    savedPayment.getOrderId()
+                    "Payment created: {} for order: {} with Stripe PaymentIntent: {}",
+                    savedPayment.getId(),
+                    savedPayment.getOrderId(),
+                    paymentIntent.getId()
             );
 
-        } else {
+            return mapToResponse(
+                    savedPayment,
+                    paymentIntent.getClientSecret()
+            );
 
-            savedPayment.setStatus(PaymentStatus.FAILED);
-            paymentRepository.save(savedPayment);
+        } catch (StripeException e) {
 
-            PaymentFailedEvent event = PaymentFailedEvent.builder()
-                    .paymentId(savedPayment.getId())
-                    .orderId(savedPayment.getOrderId())
-                    .userId(savedPayment.getUserId())
-                    .amount(savedPayment.getAmount())
-                    .build();
+            log.error(
+                    "Failed to create Stripe PaymentIntent for order: {}",
+                    request.getOrderId(),
+                    e
+            );
 
-            paymentEventProducer.publishPaymentFailed(event);
-
-            log.info(
-                    "Payment failed for order: {}",
-                    savedPayment.getOrderId()
+            throw new RuntimeException(
+                    "Failed to initialize payment with Stripe",
+                    e
             );
         }
-
-        return mapToResponse(savedPayment);
     }
 
     @Transactional(readOnly = true)
@@ -142,6 +128,13 @@ public class PaymentService {
 
     private PaymentResponse mapToResponse(Payment payment) {
 
+        return mapToResponse(payment, null);
+    }
+
+    private PaymentResponse mapToResponse(
+            Payment payment,
+            String clientSecret) {
+
         return PaymentResponse.builder()
                 .id(payment.getId())
                 .orderId(payment.getOrderId())
@@ -149,6 +142,8 @@ public class PaymentService {
                 .amount(payment.getAmount())
                 .status(payment.getStatus())
                 .createdAt(payment.getCreatedAt())
+                .stripePaymentIntentId(payment.getStripePaymentIntentId())
+                .clientSecret(clientSecret)
                 .build();
     }
 }

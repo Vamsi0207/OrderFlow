@@ -36,4 +36,7 @@ public class Payment extends BaseEntity {
     @Enumerated(EnumType.STRING)
     @Column(nullable = false)
     private PaymentStatus status;
+
+    @Column(name = "stripe_payment_intent_id", unique = true)
+    private String stripePaymentIntentId;
 }

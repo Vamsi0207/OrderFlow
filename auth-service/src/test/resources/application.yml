@@ -1,0 +1,19 @@
+spring:
+  datasource:
+    url: jdbc:h2:mem:auth_test
+    driver-class-name: org.h2.Driver
+    username: sa
+    password:
+
+  jpa:
+    hibernate:
+      ddl-auto: create-drop
+    database-platform: org.hibernate.dialect.H2Dialect
+
+eureka:
+  client:
+    enabled: false
+
+jwt:
+  secret: test-secret-key-for-jwt-testing-only-123456789
+  expiration: 86400000
