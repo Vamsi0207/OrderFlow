@@ -6,6 +6,7 @@ import com.orderflow.payment.event.PaymentCompletedEvent;
 import com.orderflow.payment.event.PaymentFailedEvent;
 import com.orderflow.payment.producer.PaymentEventProducer;
 import com.orderflow.payment.repository.PaymentRepository;
+import com.stripe.exception.EventDataObjectDeserializationException;
 import com.stripe.model.Event;
 import com.stripe.model.PaymentIntent;
 import lombok.RequiredArgsConstructor;
@@ -42,22 +43,17 @@ public class PaymentWebhookService {
 
     private void handlePaymentSucceeded(Event event) {
 
-        PaymentIntent paymentIntent =
-                (PaymentIntent) event
-                        .getDataObjectDeserializer()
-                        .getObject()
-                        .orElseThrow(() ->
-                                new IllegalStateException(
-                                        "Unable to deserialize PaymentIntent"
-                                ));
+        PaymentIntent paymentIntent = deserializePaymentIntent(event);
 
         Payment payment = findPayment(paymentIntent);
 
         if (payment.getStatus() == PaymentStatus.COMPLETED) {
+
             log.info(
                     "Payment already completed. Ignoring duplicate event for PaymentIntent: {}",
                     paymentIntent.getId()
             );
+
             return;
         }
 
@@ -75,7 +71,8 @@ public class PaymentWebhookService {
         paymentEventProducer.publishPaymentCompleted(completedEvent);
 
         log.info(
-                "Payment completed through Stripe webhook. Order: {}, PaymentIntent: {}",
+                "Payment completed through Stripe webhook. " +
+                "Order: {}, PaymentIntent: {}",
                 payment.getOrderId(),
                 paymentIntent.getId()
         );
@@ -83,22 +80,17 @@ public class PaymentWebhookService {
 
     private void handlePaymentFailed(Event event) {
 
-        PaymentIntent paymentIntent =
-                (PaymentIntent) event
-                        .getDataObjectDeserializer()
-                        .getObject()
-                        .orElseThrow(() ->
-                                new IllegalStateException(
-                                        "Unable to deserialize PaymentIntent"
-                                ));
+        PaymentIntent paymentIntent = deserializePaymentIntent(event);
 
         Payment payment = findPayment(paymentIntent);
 
         if (payment.getStatus() == PaymentStatus.FAILED) {
+
             log.info(
                     "Payment already failed. Ignoring duplicate event for PaymentIntent: {}",
                     paymentIntent.getId()
             );
+
             return;
         }
 
@@ -116,10 +108,28 @@ public class PaymentWebhookService {
         paymentEventProducer.publishPaymentFailed(failedEvent);
 
         log.info(
-                "Payment failed through Stripe webhook. Order: {}, PaymentIntent: {}",
+                "Payment failed through Stripe webhook. " +
+                "Order: {}, PaymentIntent: {}",
                 payment.getOrderId(),
                 paymentIntent.getId()
         );
+    }
+
+    private PaymentIntent deserializePaymentIntent(Event event) {
+
+        try {
+
+            return (PaymentIntent) event
+                    .getDataObjectDeserializer()
+                    .deserializeUnsafe();
+
+        } catch (EventDataObjectDeserializationException e) {
+
+            throw new IllegalStateException(
+                    "Unable to deserialize PaymentIntent",
+                    e
+            );
+        }
     }
 
     private Payment findPayment(PaymentIntent paymentIntent) {
