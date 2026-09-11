@@ -8,7 +8,15 @@ import java.math.BigDecimal;
 import java.util.UUID;
 
 @Entity
-@Table(name = "payments")
+@Table(
+        name = "payments",
+        uniqueConstraints = {
+                @UniqueConstraint(
+                        name = "uk_payment_order_id",
+                        columnNames = "orderId"
+                )
+        }
+)
 @Getter
 @Setter
 @NoArgsConstructor
@@ -28,4 +36,7 @@ public class Payment extends BaseEntity {
     @Enumerated(EnumType.STRING)
     @Column(nullable = false)
     private PaymentStatus status;
+
+    @Column(name = "stripe_payment_intent_id", unique = true)
+    private String stripePaymentIntentId;
 }

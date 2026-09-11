@@ -20,4 +20,7 @@ public class PaymentResponse {
     private BigDecimal amount;
     private PaymentStatus status;
     private Instant createdAt;
+
+    private String stripePaymentIntentId;
+    private String clientSecret;
 }

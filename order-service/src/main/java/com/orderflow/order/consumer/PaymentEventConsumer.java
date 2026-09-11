@@ -41,6 +41,38 @@ public class PaymentEventConsumer {
                             new RuntimeException(
                                     "Order not found: " + event.getOrderId()));
 
+            /*
+             * Kafka provides at-least-once delivery.
+             * The same payment event may be delivered again.
+             *
+             * If the order is already CONFIRMED,
+             * inventory was already deducted.
+             */
+            if (order.getStatus() == OrderStatus.CONFIRMED) {
+
+                log.info(
+                        "Duplicate payment.completed event ignored. " +
+                                "Order {} is already CONFIRMED",
+                        event.getOrderId()
+                );
+
+                return;
+            }
+
+            /*
+             * Do not allow a completed payment to confirm
+             * an already cancelled order.
+             */
+            if (order.getStatus() == OrderStatus.CANCELLED) {
+
+                log.warn(
+                        "Ignoring payment.completed event for cancelled order: {}",
+                        event.getOrderId()
+                );
+
+                return;
+            }
+
             order.getOrderItems().forEach(item -> {
 
                 InventoryReservationRequest request =
@@ -61,6 +93,7 @@ public class PaymentEventConsumer {
             );
 
         } catch (Exception e) {
+
             log.error(
                     "Failed to process payment.completed event",
                     e
@@ -84,6 +117,33 @@ public class PaymentEventConsumer {
                             new RuntimeException(
                                     "Order not found: " + event.getOrderId()));
 
+            /*
+             * If already CANCELLED, stock has already been released.
+             */
+            if (order.getStatus() == OrderStatus.CANCELLED) {
+
+                log.info(
+                        "Duplicate payment.failed event ignored. " +
+                                "Order {} is already CANCELLED",
+                        event.getOrderId()
+                );
+
+                return;
+            }
+
+            /*
+             * Do not cancel an already confirmed order.
+             */
+            if (order.getStatus() == OrderStatus.CONFIRMED) {
+
+                log.warn(
+                        "Ignoring payment.failed event for confirmed order: {}",
+                        event.getOrderId()
+                );
+
+                return;
+            }
+
             order.getOrderItems().forEach(item -> {
 
                 InventoryReservationRequest request =
@@ -104,6 +164,7 @@ public class PaymentEventConsumer {
             );
 
         } catch (Exception e) {
+
             log.error(
                     "Failed to process payment.failed event",
                     e
