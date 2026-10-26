@@ -110,6 +110,14 @@ OrderFlow provides user authentication, product management, inventory management
 - Integration with inventory management
 - Event-driven payment status updates
 
+### Buy Now
+
+`POST /api/v1/buy` accepts product IDs and quantities with a valid user JWT and
+`Idempotency-Key`. It obtains authoritative prices, persists a recoverable order,
+reserves inventory by order ID, and initializes one payment per order. Initialization
+is separate from payment success. Signed Stripe outcomes and Kafka events drive
+order confirmation or cancellation; uncertain outcomes keep stock reserved.
+
 ### 📊 Inventory Management
 
 - Inventory management
@@ -183,12 +191,12 @@ Order Service
 
 The Payment Service:
 
-1. Creates a Stripe PaymentIntent.
-2. Stores the payment with `PENDING` status.
-3. Returns the Stripe client secret.
+1. Persists a durable payment attempt with `PENDING` status.
+2. Initializes or retrieves its idempotent Stripe PaymentIntent.
+3. Returns an active intent's client secret only to the authenticated owner during initialization.
 4. Receives Stripe webhook events.
 5. Verifies webhook signatures.
-6. Updates payment status to `COMPLETED` or `FAILED`.
+6. Corroborates the current intent: full success becomes `COMPLETED`; definitive cancellation becomes `FAILED`. Retryable or uncertain outcomes remain pending.
 7. Publishes the corresponding Kafka event.
 
 Payment creation also includes **idempotency handling** to prevent duplicate payments for the same order.
@@ -249,11 +257,11 @@ This provides interactive API documentation for exploring endpoints, request par
 
 - **Stripe**
 
-### Testing
+### Manual Verification
 
-- **JUnit**
-- **Spring Boot Testing**
-- **End-to-End API Testing**
+- Postman or individual HTTP requests
+- Browser-based API and Discovery inspection
+- Manual Stripe sandbox/test-mode payment workflow
 
 ### API Documentation
 
@@ -359,11 +367,12 @@ OrderFlow/
 - Docker
 - Docker Compose
 - Git
+- Java 21 JDK for host-side JAR packaging (Maven wrappers are included)
 
 ### Clone the Repository
 
 ```bash
-git clone <repository-url>
+git clone https://github.com/Vamsi0207/OrderFlow.git
 cd OrderFlow
 ```
 
@@ -371,19 +380,18 @@ cd OrderFlow
 
 External credentials are provided through environment variables.
 
-For Stripe:
-
-```env
-STRIPE_SECRET_KEY=<your-stripe-secret-key>
-STRIPE_WEBHOOK_SECRET=<your-stripe-webhook-secret>
-```
+Required private settings are `DB_PASSWORD`, `JWT_SECRET`, `STRIPE_SECRET_KEY`,
+and `STRIPE_WEBHOOK_SECRET`. Use the same JWT signing secret for the services
+that verify it. For manual local payments, use Stripe sandbox/test-mode
+credentials and the actual endpoint or forwarding session's signing secret.
+See [manual setup](docs/manual-verification.md) before starting the application.
 
 > **Never commit real API keys or secrets to the repository.**
 
 ### Start the Application
 
 ```bash
-docker compose up -d
+docker compose up --build -d
 ```
 
 Check the running services:
@@ -407,10 +415,10 @@ Spring Boot Actuator is used for service health monitoring.
 Example:
 
 ```bash
-curl http://localhost:8080/actuator/health
+curl http://localhost:8082/actuator/health
 ```
 
-Expected response:
+Expected response when healthy (not verified by packaging):
 
 ```json
 {
@@ -420,13 +428,29 @@ Expected response:
 
 ---
 
-## Testing
+## Manual Verification
 
-The project includes automated testing using JUnit and Spring Boot testing support.
+This checkout uses manual verification only. Automated test sources, test-only
+resources and dependencies, and the end-to-end harness have been removed. Each
+service defaults to `maven.test.skip=true`; production compilation and executable
+Spring Boot JAR packaging remain enabled.
 
-The application has also been validated through end-to-end API flows covering interactions between the major services.
+Use a Java 21 JDK and the service's Maven wrapper to build without executing tests:
 
-The Stripe payment flow was tested using Stripe test mode and Stripe webhook events.
+```bash
+cd auth-service
+bash ./mvnw -B -Dmaven.test.skip=true clean package
+```
+
+Repeat for the other six services. See [manual verification](docs/manual-verification.md)
+for the all-service build command, local setup, actual request bodies, Buy Now,
+Stripe webhook observations, persistence and recovery boundaries. See the
+[change inventory](docs/manual-testing-changes.md) for every removed file and
+build validation performed during this change.
+
+The documented manual scenarios are expected behavior, not claims that they
+have been executed or passed. No containers, application requests, payments or
+webhooks were started by the test-removal task.
 
 ---
 
@@ -444,7 +468,7 @@ The Stripe payment flow was tested using Stripe test mode and Stripe webhook eve
 - Payment idempotency handling
 - OpenAPI / Swagger API documentation
 - Dockerized development environment
-- Automated and end-to-end testing
+- Manual API and payment verification
 
 ---
 
