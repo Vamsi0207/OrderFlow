@@ -18,9 +18,9 @@ public class ProductClient {
 public ProductInfoResponse getProduct(UUID productId) {
     return webClientBuilder.build()
             .get()
-            .uri(PRODUCT_SERVICE + "/api/v1/products/{id}/info", productId)
+            .uri(PRODUCT_SERVICE + "/api/v1/products/{id}/checkout-price", productId)
             .retrieve()
             .bodyToMono(ProductInfoResponse.class)
-            .block();
+            .block(java.time.Duration.ofSeconds(10));
 }
 }

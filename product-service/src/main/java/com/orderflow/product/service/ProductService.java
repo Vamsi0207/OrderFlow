@@ -11,6 +11,7 @@ import org.springframework.cache.annotation.CacheEvict;
 import org.springframework.cache.annotation.Cacheable;
 import org.springframework.cache.annotation.Caching;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
 
 import java.util.List;
 import java.util.UUID;
@@ -119,4 +120,17 @@ public class ProductService {
             .stock(product.getStock())
             .build();
 }
+    /** Checkout must read the current database price, independent of Redis availability or contents.
+     * Inventory Service is authoritative for available/reserved quantities; Product.stock is catalog metadata.
+     */
+    @Transactional(readOnly = true)
+    public ProductInfoResponse getCheckoutPrice(UUID id) {
+        Product product = productRepository.findById(id)
+                .orElseThrow(() -> new ProductNotFoundException(id.toString()));
+        if (product.getPrice() == null || product.getPrice().signum() <= 0)
+            throw new IllegalStateException("Product has no valid checkout price: " + id);
+        return ProductInfoResponse.builder().id(product.getId()).name(product.getName())
+                .price(product.getPrice()).stock(product.getStock()).build();
+    }
+
 }

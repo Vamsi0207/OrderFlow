@@ -14,6 +14,10 @@ import com.orderflow.inventory.exception.InventoryNotFoundException;
 import com.orderflow.inventory.repository.InventoryRepository;
 
 import jakarta.transaction.Transactional;
+import jakarta.persistence.EntityManager;
+import jakarta.persistence.PersistenceContext;
+import org.springframework.jdbc.core.JdbcTemplate;
+import com.orderflow.inventory.reservation.ReservationConflictException;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 
@@ -25,6 +29,9 @@ import java.util.UUID;
 public class InventoryService {
 
     private final InventoryRepository inventoryRepository;
+    private final JdbcTemplate jdbc;
+    @PersistenceContext
+    private EntityManager entityManager;
 
     public InventoryResponse createInventory(InventoryRequest request) {
 
@@ -63,11 +70,12 @@ public class InventoryService {
                 .toList();
     }
 
+    @Transactional
     public InventoryResponse updateInventory(
             UUID productId,
             InventoryRequest request) {
 
-        Inventory inventory = inventoryRepository.findByProductId(productId)
+        Inventory inventory = inventoryRepository.findLockedByProductId(productId)
                 .orElseThrow(() -> new InventoryNotFoundException(
                         "Inventory not found for product: " + productId
                 ));
@@ -79,13 +87,16 @@ public class InventoryService {
         return mapToResponse(inventory);
     }
 
+    @Transactional
     public void deleteInventory(UUID productId) {
 
-        Inventory inventory = inventoryRepository.findByProductId(productId)
+        Inventory inventory = inventoryRepository.findLockedByProductId(productId)
                 .orElseThrow(() -> new InventoryNotFoundException(
                         "Inventory not found for product: " + productId
                 ));
 
+        if (inventory.getReservedQuantity() > 0)
+            throw new ReservationConflictException("Cannot delete inventory with reserved stock");
         inventoryRepository.delete(inventory);
     }
 
@@ -124,7 +135,7 @@ public class InventoryService {
     public InventoryReservationResponse reserveStock(
         ReserveStockRequest request) {
 
-        Inventory inventory = inventoryRepository.findByProductId(
+        Inventory inventory = inventoryRepository.findLockedByProductId(
                     request.getProductId())
             .orElseThrow(() -> new InventoryNotFoundException(
                     "Inventory not found for product: "
@@ -140,7 +151,7 @@ public class InventoryService {
             inventory.getAvailableQuantity() - request.getQuantity());
 
           inventory.setReservedQuantity(
-            inventory.getReservedQuantity() + request.getQuantity());
+            Math.addExact(inventory.getReservedQuantity(), request.getQuantity()));
 
           inventoryRepository.save(inventory);
 
@@ -156,13 +167,13 @@ public class InventoryService {
     public InventoryReservationResponse releaseStock(
         ReserveStockRequest request) {
 
-        Inventory inventory = inventoryRepository.findByProductId(
+        Inventory inventory = inventoryRepository.findLockedByProductId(
                     request.getProductId())
             .orElseThrow(() -> new InventoryNotFoundException(
                     "Inventory not found for product: "
                             + request.getProductId()));
 
-         if (inventory.getReservedQuantity() < request.getQuantity()) {
+         if (legacyReserved(inventory) < request.getQuantity()) {
         throw new InsufficientReservedStockException(
                 "Cannot release more stock than reserved for product: "
                         + request.getProductId());
@@ -172,7 +183,7 @@ public class InventoryService {
             inventory.getReservedQuantity() - request.getQuantity());
 
       inventory.setAvailableQuantity(
-         inventory.getAvailableQuantity() + request.getQuantity());
+         Math.addExact(inventory.getAvailableQuantity(), request.getQuantity()));
 
      inventoryRepository.save(inventory);
 
@@ -188,13 +199,13 @@ public class InventoryService {
     public InventoryReservationResponse deductStock(
         ReserveStockRequest request) {
 
-        Inventory inventory = inventoryRepository.findByProductId(
+        Inventory inventory = inventoryRepository.findLockedByProductId(
                     request.getProductId())
             .orElseThrow(() -> new InventoryNotFoundException(
                     "Inventory not found for product: "
                             + request.getProductId()));
 
-        if (inventory.getReservedQuantity() < request.getQuantity()) {
+        if (legacyReserved(inventory) < request.getQuantity()) {
         throw new InsufficientReservedStockException(
                 "Cannot deduct more stock than reserved for product: "
                         + request.getProductId());
@@ -211,5 +222,18 @@ public class InventoryService {
             .reservedQuantity(inventory.getReservedQuantity())
             .message("Stock deducted successfully.")
             .build();
+    }
+
+    /** Caller holds the inventory row lock. Legacy callers may only consume anonymous reservations. */
+    private long legacyReserved(Inventory inventory) {
+        // JdbcTemplate does not auto-flush JPA changes. Include any scoped changes
+        // from this same transaction before determining the legacy-only balance.
+        entityManager.flush();
+        Long scoped = jdbc.queryForObject("""
+                SELECT COALESCE(SUM(i.quantity), 0) FROM stock_reservation_items i
+                JOIN stock_reservations r ON r.order_id = i.order_id
+                WHERE i.product_id = ? AND r.state = 'RESERVED'
+                """, Long.class, inventory.getProductId());
+        return inventory.getReservedQuantity() - scoped;
     }
 }

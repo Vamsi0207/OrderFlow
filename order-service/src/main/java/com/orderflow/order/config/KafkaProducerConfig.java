@@ -17,13 +17,14 @@ import java.util.Map;
 public class KafkaProducerConfig {
 
     @Bean
-    public ProducerFactory<String, OrderCreatedEvent> producerFactory() {
+    public ProducerFactory<String, OrderCreatedEvent> producerFactory(
+            @org.springframework.beans.factory.annotation.Value("${spring.kafka.bootstrap-servers}") String bootstrap) {
 
         Map<String, Object> config = new HashMap<>();
 
         config.put(
                ProducerConfig.BOOTSTRAP_SERVERS_CONFIG,
-             System.getenv().getOrDefault("KAFKA_HOST", "localhost") + ":9092"
+             bootstrap
         );
 
         config.put(
@@ -36,12 +37,15 @@ public class KafkaProducerConfig {
                 JsonSerializer.class
         );
 
+        config.put(ProducerConfig.MAX_BLOCK_MS_CONFIG, 5000);
+        config.put(ProducerConfig.DELIVERY_TIMEOUT_MS_CONFIG, 10000);
+        config.put(ProducerConfig.REQUEST_TIMEOUT_MS_CONFIG, 5000);
         return new DefaultKafkaProducerFactory<>(config);
     }
 
     @Bean
-    public KafkaTemplate<String, OrderCreatedEvent> kafkaTemplate() {
+    public KafkaTemplate<String, OrderCreatedEvent> kafkaTemplate(ProducerFactory<String, OrderCreatedEvent> producerFactory) {
 
-        return new KafkaTemplate<>(producerFactory());
+        return new KafkaTemplate<>(producerFactory);
     }
 }

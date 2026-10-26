@@ -116,4 +116,13 @@ public ResponseEntity<ErrorResponse> handleInventoryAlreadyExists(
         return ResponseEntity.badRequest()
             .body(response);
     }
+
+    @ExceptionHandler(com.orderflow.inventory.reservation.ReservationConflictException.class)
+    public ResponseEntity<Map<String, String>> handleReservationConflict(RuntimeException ex) {
+        return ResponseEntity.status(HttpStatus.CONFLICT).body(Map.of("message", ex.getMessage()));
+    }
+    @ExceptionHandler(com.orderflow.inventory.reservation.ReservationNotFoundException.class)
+    public ResponseEntity<Map<String, String>> handleReservationMissing(RuntimeException ex) {
+        return ResponseEntity.status(HttpStatus.NOT_FOUND).body(Map.of("message", ex.getMessage()));
+    }
 }

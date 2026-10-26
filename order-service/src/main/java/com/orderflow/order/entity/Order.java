@@ -29,6 +29,17 @@ public class Order extends BaseEntity {
     @Column(nullable = false, precision = 10, scale = 2)
     private BigDecimal totalAmount;
 
+    @Column(nullable = false, length = 3, columnDefinition = "varchar(3) default 'INR'")
+    @Builder.Default
+    private String currency = "INR";
+
+    @Column(unique = true)
+    private UUID checkoutAttemptId;
+    @Column(nullable = false, columnDefinition = "boolean default false")
+    private boolean scopedReservation;
+    @Column(nullable = false, columnDefinition = "boolean default false")
+    private boolean inventoryReserved;
+
     @OneToMany(
             mappedBy = "order",
             cascade = CascadeType.ALL,

@@ -21,3 +21,10 @@ eureka:
 stripe:
   secret-key: test-stripe-secret-key
   webhook-secret: test-stripe-webhook-secret
+
+jwt:
+  secret: phase2-only-test-jwt-secret-at-least-32-characters
+
+orderflow:
+  recovery:
+    enabled: false

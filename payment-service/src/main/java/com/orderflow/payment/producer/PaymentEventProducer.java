@@ -1,48 +1,19 @@
 package com.orderflow.payment.producer;
-
-import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
-import com.orderflow.payment.event.PaymentCompletedEvent;
+import com.orderflow.payment.event.*;
 import lombok.RequiredArgsConstructor;
-import lombok.extern.slf4j.Slf4j;
 import org.springframework.kafka.core.KafkaTemplate;
 import org.springframework.stereotype.Component;
-import com.orderflow.payment.event.PaymentFailedEvent;
-
-@Component
-@RequiredArgsConstructor
-@Slf4j
+import java.util.concurrent.TimeUnit;
+@Component @RequiredArgsConstructor
 public class PaymentEventProducer {
-
-    private final KafkaTemplate<String, String> kafkaTemplate;
-    private final ObjectMapper objectMapper;
-
-    public void publishPaymentCompleted(PaymentCompletedEvent event) {
-
-        try {
-            String message = objectMapper.writeValueAsString(event);
-
-            kafkaTemplate.send("payment.completed", message);
-
-            log.info("Published payment.completed event: {}", message);
-
-        } catch (JsonProcessingException e) {
-            throw new RuntimeException(
-                    "Failed to serialize PaymentCompletedEvent", e);
-        }
+    private final KafkaTemplate<String,String> kafka;
+    private final ObjectMapper mapper;
+    public void publishPaymentCompleted(PaymentCompletedEvent event) { send("payment.completed",event.getOrderId().toString(),event); }
+    public void publishPaymentFailed(PaymentFailedEvent event) { send("payment.failed",event.getOrderId().toString(),event); }
+    private void send(String topic,String key,Object event) {
+        try { kafka.send(topic,key,mapper.writeValueAsString(event)).get(10,TimeUnit.SECONDS); }
+        catch(InterruptedException interrupted){Thread.currentThread().interrupt();throw new IllegalStateException("Payment notification interrupted");}
+        catch(Exception failure){throw new IllegalStateException("Payment notification not acknowledged");}
     }
-    public void publishPaymentFailed(PaymentFailedEvent event) {
-
-    try {
-        String message = objectMapper.writeValueAsString(event);
-
-        kafkaTemplate.send("payment.failed", message);
-
-        log.info("Published payment.failed event: {}", message);
-
-    } catch (JsonProcessingException e) {
-        throw new RuntimeException(
-                "Failed to serialize PaymentFailedEvent", e);
-    }
-}
 }

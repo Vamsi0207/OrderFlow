@@ -1,184 +1,57 @@
 package com.orderflow.order.consumer;
-
 import com.fasterxml.jackson.databind.ObjectMapper;
-import com.orderflow.order.client.InventoryClient;
+import com.orderflow.order.client.*;
 import com.orderflow.order.dto.inventory.request.InventoryReservationRequest;
-import com.orderflow.order.entity.Order;
 import com.orderflow.order.enums.OrderStatus;
 import com.orderflow.order.repository.OrderRepository;
-import lombok.Getter;
-import lombok.NoArgsConstructor;
-import lombok.RequiredArgsConstructor;
-import lombok.extern.slf4j.Slf4j;
+import lombok.*;
 import org.springframework.kafka.annotation.KafkaListener;
 import org.springframework.stereotype.Component;
-
+import org.springframework.transaction.annotation.Transactional;
 import java.math.BigDecimal;
 import java.util.UUID;
-
-@Component
-@RequiredArgsConstructor
-@Slf4j
+@Component @RequiredArgsConstructor
 public class PaymentEventConsumer {
-
-    private final OrderRepository orderRepository;
-    private final InventoryClient inventoryClient;
-    private final ObjectMapper objectMapper;
-
-    @KafkaListener(
-            topics = "payment.completed",
-            groupId = "order-service"
-    )
-    public void consumePaymentCompleted(String message) {
-
+    private final OrderRepository orders;
+    private final InventoryClient inventory;
+    private final ObjectMapper mapper;
+    private final PaymentStatusClient payments;
+    private final com.orderflow.order.service.LegacyPaymentEffectStore legacyEffects;
+    @KafkaListener(topics="payment.completed",groupId="order-service")
+    @Transactional
+    public void consumePaymentCompleted(String message) { process(message,true); }
+    @KafkaListener(topics="payment.failed",groupId="order-service")
+    @Transactional
+    public void consumePaymentFailed(String message) { process(message,false); }
+    private void process(String message,boolean completed) {
         try {
-            PaymentEvent event =
-                    objectMapper.readValue(message, PaymentEvent.class);
-
-            Order order = orderRepository
-                    .findWithOrderItemsById(event.getOrderId())
-                    .orElseThrow(() ->
-                            new RuntimeException(
-                                    "Order not found: " + event.getOrderId()));
-
-            /*
-             * Kafka provides at-least-once delivery.
-             * The same payment event may be delivered again.
-             *
-             * If the order is already CONFIRMED,
-             * inventory was already deducted.
-             */
-            if (order.getStatus() == OrderStatus.CONFIRMED) {
-
-                log.info(
-                        "Duplicate payment.completed event ignored. " +
-                                "Order {} is already CONFIRMED",
-                        event.getOrderId()
-                );
-
-                return;
+            var event=mapper.readValue(message,PaymentEvent.class);
+            var order=orders.findLocked(event.orderId()).orElseThrow();
+            // Includes DELIVERED: never cancel or resurrect a terminal order.
+            if(order.getStatus()!=OrderStatus.PENDING)return;
+            var payment=payments.get(event.paymentId());
+            if(payment==null || !event.paymentId().equals(payment.id()) || !order.getId().equals(payment.orderId())
+                    || !order.getUserId().equals(payment.userId()) || payment.amount()==null
+                    || order.getTotalAmount().compareTo(payment.amount())!=0 || !order.getCurrency().equalsIgnoreCase(payment.currency()))
+                throw new IllegalStateException("Payment/order snapshot mismatch");
+            // Topic/body alone is never proof of a terminal payment. Unknown/pending outcomes keep inventory reserved.
+            if(!(completed?"COMPLETED":"FAILED").equals(payment.status()))return;
+            if(order.isScopedReservation() || inventory.hasScopedReservation(order.getId()))inventory.finishScoped(order.getId(),completed);
+            else {
+                var quantities=new java.util.TreeMap<UUID,Integer>();
+                for(var item:order.getOrderItems())quantities.merge(item.getProductId(),item.getQuantity(),Math::addExact);
+                for(var line:quantities.entrySet()) {
+                    if(!legacyEffects.claim(order.getId(),line.getKey(),payment.id(),line.getValue(),completed))continue;
+                    var request=InventoryReservationRequest.builder().productId(line.getKey()).quantity(line.getValue()).build();
+                    // A timeout/exception leaves STARTED durable. Redelivery stops for reconciliation.
+                    if(completed)inventory.deductStock(request);else inventory.releaseStock(request);
+                    legacyEffects.complete(order.getId(),line.getKey());
+                }
             }
-
-            /*
-             * Do not allow a completed payment to confirm
-             * an already cancelled order.
-             */
-            if (order.getStatus() == OrderStatus.CANCELLED) {
-
-                log.warn(
-                        "Ignoring payment.completed event for cancelled order: {}",
-                        event.getOrderId()
-                );
-
-                return;
-            }
-
-            order.getOrderItems().forEach(item -> {
-
-                InventoryReservationRequest request =
-                        InventoryReservationRequest.builder()
-                                .productId(item.getProductId())
-                                .quantity(item.getQuantity())
-                                .build();
-
-                inventoryClient.deductStock(request);
-            });
-
-            order.setStatus(OrderStatus.CONFIRMED);
-            orderRepository.save(order);
-
-            log.info(
-                    "Order {} confirmed after successful payment",
-                    event.getOrderId()
-            );
-
-        } catch (Exception e) {
-
-            log.error(
-                    "Failed to process payment.completed event",
-                    e
-            );
-        }
+            order.setStatus(completed?OrderStatus.CONFIRMED:OrderStatus.CANCELLED);
+            orders.save(order);
+        } catch(RuntimeException failure) {throw failure;}
+        catch(Exception failure) {throw new IllegalStateException("Payment event processing requires retry");}
     }
-
-    @KafkaListener(
-            topics = "payment.failed",
-            groupId = "order-service"
-    )
-    public void consumePaymentFailed(String message) {
-
-        try {
-            PaymentEvent event =
-                    objectMapper.readValue(message, PaymentEvent.class);
-
-            Order order = orderRepository
-                    .findWithOrderItemsById(event.getOrderId())
-                    .orElseThrow(() ->
-                            new RuntimeException(
-                                    "Order not found: " + event.getOrderId()));
-
-            /*
-             * If already CANCELLED, stock has already been released.
-             */
-            if (order.getStatus() == OrderStatus.CANCELLED) {
-
-                log.info(
-                        "Duplicate payment.failed event ignored. " +
-                                "Order {} is already CANCELLED",
-                        event.getOrderId()
-                );
-
-                return;
-            }
-
-            /*
-             * Do not cancel an already confirmed order.
-             */
-            if (order.getStatus() == OrderStatus.CONFIRMED) {
-
-                log.warn(
-                        "Ignoring payment.failed event for confirmed order: {}",
-                        event.getOrderId()
-                );
-
-                return;
-            }
-
-            order.getOrderItems().forEach(item -> {
-
-                InventoryReservationRequest request =
-                        InventoryReservationRequest.builder()
-                                .productId(item.getProductId())
-                                .quantity(item.getQuantity())
-                                .build();
-
-                inventoryClient.releaseStock(request);
-            });
-
-            order.setStatus(OrderStatus.CANCELLED);
-            orderRepository.save(order);
-
-            log.info(
-                    "Order {} cancelled after failed payment",
-                    event.getOrderId()
-            );
-
-        } catch (Exception e) {
-
-            log.error(
-                    "Failed to process payment.failed event",
-                    e
-            );
-        }
-    }
-
-    @Getter
-    @NoArgsConstructor
-    private static class PaymentEvent {
-
-        private UUID paymentId;
-        private UUID orderId;
-        private UUID userId;
-        private BigDecimal amount;
-    }
+    public record PaymentEvent(UUID paymentId,UUID orderId,UUID userId,BigDecimal amount) {}
 }

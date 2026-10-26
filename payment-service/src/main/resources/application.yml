@@ -7,6 +7,11 @@ spring:
 
   kafka:
     bootstrap-servers: ${KAFKA_HOST:localhost}:9092
+    producer:
+      properties:
+        max.block.ms: 5000
+        delivery.timeout.ms: 10000
+        request.timeout.ms: 5000
 
   datasource:
     url: jdbc:postgresql://${DB_HOST:localhost}:5432/payment_db
@@ -39,3 +44,6 @@ management:
 stripe:
   secret-key: ${STRIPE_SECRET_KEY}
   webhook-secret: ${STRIPE_WEBHOOK_SECRET}
+
+jwt:
+  secret: ${JWT_SECRET}

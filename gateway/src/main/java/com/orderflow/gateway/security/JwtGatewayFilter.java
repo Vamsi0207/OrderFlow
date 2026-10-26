@@ -27,6 +27,17 @@ public class JwtGatewayFilter implements GlobalFilter {
                 .getURI()
                 .getPath();
 
+        if (path.equals("/api/v1/inventory/reservations") || path.startsWith("/api/v1/inventory/reservations/")) {
+            exchange.getResponse().setStatusCode(HttpStatus.FORBIDDEN);
+            return exchange.getResponse().setComplete();
+        }
+        // Stripe authenticates this exact POST route using its signature, not a user JWT.
+        if (org.springframework.http.HttpMethod.POST.equals(exchange.getRequest().getMethod())
+                && "/api/v1/payments/webhook".equals(path)) {
+            return chain.filter(exchange.mutate().request(exchange.getRequest().mutate()
+                    .headers(headers -> { headers.remove("X-User-Id"); headers.remove("X-User-Role"); }).build()).build());
+        }
+
         // Public authentication endpoints
         if (path.startsWith("/api/v1/auth/")) {
             return chain.filter(exchange);
