@@ -17,7 +17,6 @@ public class CreatePaymentRequest {
     @NotNull
     private UUID orderId;
 
-    @NotNull
-    @DecimalMin("0.01")
+    /** Deprecated compatibility field. Ignored; amount and currency come from the order. */
     private BigDecimal amount;
 }

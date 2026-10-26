@@ -165,4 +165,10 @@ public class ProductController {
                 productService.getProductInfo(id)
         );
     }
+    @Operation(summary = "Get authoritative checkout price", description = "Reads the database directly, bypassing Redis. Inventory availability is checked separately.")
+    @GetMapping("/{id}/checkout-price")
+    public ResponseEntity<ProductInfoResponse> getCheckoutPrice(@PathVariable UUID id) {
+        return ResponseEntity.ok(productService.getCheckoutPrice(id));
+    }
+
 }

@@ -23,6 +23,9 @@ public class OrderResponse {
 
     private BigDecimal totalAmount;
 
+    private String currency;
+    private boolean paymentEligible;
+
     private List<OrderItemResponse> items;
 
     private Instant createdAt;

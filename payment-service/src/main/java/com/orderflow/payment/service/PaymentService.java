@@ -1,149 +1,65 @@
 package com.orderflow.payment.service;
-
+import com.orderflow.payment.client.*;
+import com.orderflow.payment.security.PaymentActor;
 import com.orderflow.payment.dto.request.CreatePaymentRequest;
 import com.orderflow.payment.dto.response.PaymentResponse;
 import com.orderflow.payment.entity.Payment;
-import com.orderflow.payment.enums.PaymentStatus;
 import com.orderflow.payment.exception.PaymentNotFoundException;
 import com.orderflow.payment.repository.PaymentRepository;
-import com.stripe.exception.StripeException;
-import com.stripe.model.PaymentIntent;
 import lombok.RequiredArgsConstructor;
-import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
-import org.springframework.transaction.annotation.Transactional;
-
-import java.util.List;
-import java.util.UUID;
-
-@Service
-@RequiredArgsConstructor
-@Slf4j
+import org.springframework.http.HttpStatus;
+import org.springframework.web.server.ResponseStatusException;
+import java.util.*;
+@Service @RequiredArgsConstructor
 public class PaymentService {
+    private final PaymentRepository repository;
+    private final OrderClient orders;
+    private final PaymentStore store;
+    private final PaymentInitializer initializer;
 
-    private final PaymentRepository paymentRepository;
-    private final StripePaymentService stripePaymentService;
-
-    @Transactional
-    public PaymentResponse createPayment(
-            CreatePaymentRequest request,
-            UUID authenticatedUserId) {
-
-        PaymentResponse existingPayment = paymentRepository
-                .findByOrderId(request.getOrderId())
-                .map(this::mapToResponse)
-                .orElse(null);
-
-        if (existingPayment != null) {
-
-            log.info(
-                    "Duplicate payment request detected for order: {}. " +
-                    "Returning existing payment: {}",
-                    request.getOrderId(),
-                    existingPayment.getId()
-            );
-
-            return existingPayment;
-        }
-
-        return processNewPayment(request, authenticatedUserId);
+    public PaymentResponse createPayment(CreatePaymentRequest request,PaymentActor actor) {
+        var order=orders.get(request.getOrderId(),actor);
+        if(order==null || !request.getOrderId().equals(order.id()))throw new ResponseStatusException(HttpStatus.BAD_GATEWAY,"Invalid order response");
+        if(!actor.userId().equals(order.userId()))throw new ResponseStatusException(HttpStatus.FORBIDDEN,"Order ownership required");
+        if(Boolean.FALSE.equals(order.paymentEligible()))throw new ResponseStatusException(HttpStatus.CONFLICT,"Order inventory is not reserved");
+        if(!"PENDING".equals(order.status()))throw new ResponseStatusException(HttpStatus.CONFLICT,"Order is not eligible for payment");
+        // Historical orders are INR; USD/EUR are also supported as two-decimal currencies.
+        if(order.totalAmount()==null || order.totalAmount().signum()<=0 || order.totalAmount().scale()>2
+                || order.currency()==null || !Set.of("INR","USD","EUR").contains(order.currency().toUpperCase(Locale.ROOT)))
+            throw new ResponseStatusException(HttpStatus.CONFLICT,"Invalid order pricing or unsupported currency");
+        try { StripePaymentService.minorUnits(order.totalAmount()); }
+        catch(ArithmeticException invalid){throw new ResponseStatusException(HttpStatus.CONFLICT,"Invalid order amount");}
+        var payment=store.prepare(order);
+        if(!actor.userId().equals(payment.getUserId()) || payment.getAmount().compareTo(order.totalAmount())!=0
+                || !payment.getCurrency().equalsIgnoreCase(order.currency()))
+            throw new ResponseStatusException(HttpStatus.CONFLICT,"Payment/order snapshot mismatch; reconciliation required");
+        if(payment.getStatus()!=com.orderflow.payment.enums.PaymentStatus.PENDING)
+            throw new ResponseStatusException(HttpStatus.CONFLICT,"Payment is already terminal");
+        return initializer.initialize(payment.getId());
     }
-
-    private PaymentResponse processNewPayment(
-            CreatePaymentRequest request,
-            UUID authenticatedUserId) {
-
-        try {
-
-            PaymentIntent paymentIntent =
-                    stripePaymentService.createPaymentIntent(
-                            request.getAmount(),
-                            request.getOrderId()
-                    );
-
-            Payment payment = Payment.builder()
-                    .orderId(request.getOrderId())
-                    .userId(authenticatedUserId)
-                    .amount(request.getAmount())
-                    .status(PaymentStatus.PENDING)
-                    .stripePaymentIntentId(paymentIntent.getId())
-                    .build();
-
-            Payment savedPayment = paymentRepository.save(payment);
-
-            log.info(
-                    "Payment created: {} for order: {} with Stripe PaymentIntent: {}",
-                    savedPayment.getId(),
-                    savedPayment.getOrderId(),
-                    paymentIntent.getId()
-            );
-
-            return mapToResponse(
-                    savedPayment,
-                    paymentIntent.getClientSecret()
-            );
-
-        } catch (StripeException e) {
-
-            log.error(
-                    "Failed to create Stripe PaymentIntent for order: {}",
-                    request.getOrderId(),
-                    e
-            );
-
-            throw new RuntimeException(
-                    "Failed to initialize payment with Stripe",
-                    e
-            );
-        }
+    public PaymentResponse getPaymentByOrder(UUID orderId,PaymentActor actor) {
+        var p=repository.findByOrderId(orderId).orElseThrow(() -> new PaymentNotFoundException(orderId.toString()));
+        return getPaymentById(p.getId(),actor);
     }
-
-    @Transactional(readOnly = true)
-    public PaymentResponse getPaymentById(UUID id) {
-
-        Payment payment = paymentRepository.findById(id)
-                .orElseThrow(() ->
-                        new PaymentNotFoundException(id.toString()));
-
-        return mapToResponse(payment);
+    public PaymentResponse getPaymentById(UUID id,PaymentActor actor) {
+        Payment p=repository.findById(id).orElseThrow(() -> new PaymentNotFoundException(id.toString()));
+        if(!p.getUserId().equals(actor.userId()))throw new ResponseStatusException(HttpStatus.FORBIDDEN,"Payment ownership required");
+        var order=orders.get(p.getOrderId(),actor);
+        if(order==null || !p.getOrderId().equals(order.id()) || !actor.userId().equals(order.userId()))throw new ResponseStatusException(HttpStatus.FORBIDDEN,"Order ownership required");
+        return PaymentInitializer.response(p,null);
     }
-
-    @Transactional(readOnly = true)
-    public List<PaymentResponse> getAllPayments() {
-
-        return paymentRepository.findAll()
-                .stream()
-                .map(this::mapToResponse)
-                .toList();
+    public List<PaymentResponse> getAllPayments(PaymentActor actor) {
+        // The old unscoped listing exposed other customers' payment records.
+        return getPaymentsByUser(actor.userId(),actor);
     }
-
-    @Transactional(readOnly = true)
-    public List<PaymentResponse> getPaymentsByUser(UUID userId) {
-
-        return paymentRepository.findByUserId(userId)
-                .stream()
-                .map(this::mapToResponse)
-                .toList();
-    }
-
-    private PaymentResponse mapToResponse(Payment payment) {
-
-        return mapToResponse(payment, null);
-    }
-
-    private PaymentResponse mapToResponse(
-            Payment payment,
-            String clientSecret) {
-
-        return PaymentResponse.builder()
-                .id(payment.getId())
-                .orderId(payment.getOrderId())
-                .userId(payment.getUserId())
-                .amount(payment.getAmount())
-                .status(payment.getStatus())
-                .createdAt(payment.getCreatedAt())
-                .stripePaymentIntentId(payment.getStripePaymentIntentId())
-                .clientSecret(clientSecret)
-                .build();
+    public List<PaymentResponse> getPaymentsByUser(UUID userId,PaymentActor actor) {
+        if(!userId.equals(actor.userId()))throw new ResponseStatusException(HttpStatus.FORBIDDEN,"Payment ownership required");
+        return repository.findByUserId(userId).stream().map(p -> {
+            var order=orders.get(p.getOrderId(),actor);
+            if(order==null || !p.getOrderId().equals(order.id()) || !actor.userId().equals(order.userId()))
+                throw new ResponseStatusException(HttpStatus.FORBIDDEN,"Order ownership required");
+            return PaymentInitializer.response(p,null);
+        }).toList();
     }
 }

@@ -90,6 +90,7 @@ services:
     environment:
       DB_HOST: postgres
       KAFKA_HOST: kafka
+      JWT_SECRET: ${JWT_SECRET}
       EUREKA_HOST: discovery-server
       DB_PASSWORD: ${DB_PASSWORD}
     ports:
@@ -126,6 +127,7 @@ services:
     environment:
       DB_HOST: postgres
       EUREKA_HOST: discovery-server
+      JWT_SECRET: ${JWT_SECRET}
       DB_PASSWORD: ${DB_PASSWORD}
     ports:
       - "8084:8084"
@@ -142,6 +144,7 @@ services:
     environment:
       DB_HOST: postgres
       KAFKA_HOST: kafka
+      JWT_SECRET: ${JWT_SECRET}
       EUREKA_HOST: discovery-server
       DB_PASSWORD: ${DB_PASSWORD}
       STRIPE_SECRET_KEY: ${STRIPE_SECRET_KEY}

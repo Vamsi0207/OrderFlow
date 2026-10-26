@@ -19,6 +19,8 @@ public class PaymentResponse {
     private UUID userId;
     private BigDecimal amount;
     private PaymentStatus status;
+    private String currency;
+    private com.orderflow.payment.enums.InitializationState initializationState;
     private Instant createdAt;
 
     private String stripePaymentIntentId;

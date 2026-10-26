@@ -26,6 +26,7 @@ import org.springframework.transaction.annotation.Transactional;
 
 import java.math.BigDecimal;
 import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.List;
 import java.util.UUID;
 
@@ -54,10 +55,19 @@ public class OrderService {
 
         BigDecimal totalAmount = BigDecimal.ZERO;
 
+        // Validate every authoritative price before reserving any remote inventory.
+        var products = new HashMap<UUID, ProductInfoResponse>();
+        for (OrderItemRequest item : request.getItems()) {
+            products.computeIfAbsent(item.getProductId(), id -> {
+                ProductInfoResponse product = productClient.getProduct(id);
+                if (product == null || !id.equals(product.getId()) || product.getPrice() == null
+                        || product.getPrice().signum() <= 0 || product.getPrice().scale() > 2)
+                    throw new IllegalStateException("Invalid authoritative product price");
+                return product;
+            });
+        }
         for (OrderItemRequest itemRequest : request.getItems()) {
-
-            ProductInfoResponse product =
-                    productClient.getProduct(itemRequest.getProductId());
+            ProductInfoResponse product = products.get(itemRequest.getProductId());
 
             InventoryAvailabilityRequest availabilityRequest =
                     InventoryAvailabilityRequest.builder()
@@ -167,6 +177,8 @@ public class OrderService {
                 .userId(order.getUserId())
                 .status(order.getStatus())
                 .totalAmount(order.getTotalAmount())
+                .currency(order.getCurrency())
+                .paymentEligible(!order.isScopedReservation() || order.isInventoryReserved())
                 .items(
                         order.getOrderItems()
                                 .stream()

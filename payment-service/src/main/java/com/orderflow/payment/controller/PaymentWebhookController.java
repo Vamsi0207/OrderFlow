@@ -15,45 +15,25 @@ import org.springframework.web.bind.annotation.*;
 @RequiredArgsConstructor
 @Slf4j
 public class PaymentWebhookController {
-
     private final PaymentWebhookService paymentWebhookService;
     private final StripeProperties stripeProperties;
 
     @PostMapping("/webhook")
-    public ResponseEntity<String> handleWebhook(
-            @RequestBody String payload,
+    public ResponseEntity<String> handleWebhook(@RequestBody String payload,
             @RequestHeader("Stripe-Signature") String signature) {
-
+        final Event event;
         try {
-
-            Event event = Webhook.constructEvent(
-                    payload,
-                    signature,
-                    stripeProperties.getWebhookSecret()
-            );
-
-            log.info(
-                    "Received verified Stripe webhook: {}",
-                    event.getType()
-            );
-
+            event=Webhook.constructEvent(payload,signature,stripeProperties.getWebhookSecret());
+        } catch(SignatureVerificationException | RuntimeException invalid) {
+            return ResponseEntity.badRequest().body("Invalid webhook signature or payload");
+        }
+        try {
             paymentWebhookService.handleEvent(event);
-
             return ResponseEntity.ok("Webhook processed");
-
-        } catch (SignatureVerificationException e) {
-
-            log.warn("Invalid Stripe webhook signature");
-
-            return ResponseEntity.badRequest()
-                    .body("Invalid webhook signature");
-
-        } catch (Exception e) {
-
-            log.error("Failed to process Stripe webhook", e);
-
-            return ResponseEntity.internalServerError()
-                    .body("Webhook processing failed");
+        } catch(Exception retryable) {
+            // Never log SDK exceptions, raw webhook data or client secrets.
+            log.warn("Stripe webhook requires retry or reconciliation");
+            return ResponseEntity.internalServerError().body("Webhook processing requires retry");
         }
     }
 }
